@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 st.set_page_config(layout='wide')
-st.title("💼 Продажи менеджеров с разбивкой: до 100K / до–1M / до 10M")
+st.title("📊 Продажи менеджеров — сумма или количество")
 
 # 📥 Автозагрузка CSV
 csv_path = '_SELECT_CONCAT_u_username_u_first_name_AS_Менеджер_s_status_name_202505220912.csv'
@@ -12,34 +12,50 @@ df = pd.read_csv(csv_path)
 # 🔍 Фильтрация по товарам и дате
 df = df[df['Товар'].isin(['Теназол Супер', 'РИЧ 350'])]
 df['Дата договора'] = pd.to_datetime(df['Дата договора'])
-df = df[(df['Дата договора'] > '2025-05-07') & (df['Дата договора'] < '2025-05-21')]
+df = df[(df['Дата договора'] > '2025-05-08') & (df['Дата договора'] < '2025-05-21')]
 df['Цена'] = pd.to_numeric(df['Цена'], errors='coerce')
-df['Сумма продажи'] = df['Количество'] * df['Цена']
+
+# ▶️ Выбор режима отображения
+metric_type = st.radio("Что отобразить?", ["Количество", "Сумма продаж"])
 
 # ▶️ Выбор статуса менеджера
 available_statuses = df['Статус менеджера'].dropna().unique().tolist()
 selected_statuses = st.multiselect("Выберите статус менеджера", available_statuses, default=available_statuses)
-
-# 🔁 Фильтрация по выбранным статусам
 df = df[df['Статус менеджера'].isin(selected_statuses)]
+
+# 🔢 Расчёт
+if metric_type == "Сумма продаж":
+    df['Метрика'] = df['Количество'] * df['Цена']
+    y_title = 'Сумма продаж (тенге)'
+    group_title = 'Общая сумма продаж'
+    bins = [0, 1e5, 1e6, 1e9]
+    labels = ['— до 100K —', '— до 1M —', '— до 10M+ —']
+    chart_title = '💰 Суммарные продажи менеджеров'
+else:
+    df['Метрика'] = df['Количество']
+    y_title = 'Количество проданных упаковок'
+    group_title = 'Общее количество'
+    bins = [0, 10, 100, 10000]
+    labels = ['— до 10 —', '— до 100 —', '— до 1000+ —']
+    chart_title = '📦 Количество продаж менеджеров'
 
 # 📊 Pivot
 pivot_df = df.pivot_table(index='Менеджер',
                           columns='Товар',
-                          values='Сумма продажи',
+                          values='Метрика',
                           aggfunc='sum',
                           fill_value=0)
-pivot_df['Общая сумма продаж'] = pivot_df.sum(axis=1)
-pivot_df = pivot_df.sort_values(by='Общая сумма продаж', ascending=True)
+pivot_df[group_title] = pivot_df.sum(axis=1)
+pivot_df = pivot_df.sort_values(by=group_title, ascending=True)
 
-# 🧱 Группировка
-low = pivot_df[pivot_df['Общая сумма продаж'] <= 1e5]
-mid = pivot_df[(pivot_df['Общая сумма продаж'] > 1e5) & (pivot_df['Общая сумма продаж'] < 1e6)]
-high = pivot_df[pivot_df['Общая сумма продаж'] >= 1e6]
+# 🧱 Группировка по уровням
+low = pivot_df[pivot_df[group_title] <= bins[1]]
+mid = pivot_df[(pivot_df[group_title] > bins[1]) & (pivot_df[group_title] <= bins[2])]
+high = pivot_df[pivot_df[group_title] > bins[2]]
 
-gap_low = pd.DataFrame({'Теназол Супер': [None], 'РИЧ 350': [None], 'Общая сумма продаж': [None]}, index=['— до 100K —'])
-gap_mid = pd.DataFrame({'Теназол Супер': [None], 'РИЧ 350': [None], 'Общая сумма продаж': [None]}, index=['— до–1M —'])
-gap_high = pd.DataFrame({'Теназол Супер': [None], 'РИЧ 350': [None], 'Общая сумма продаж': [None]}, index=['— до 10M —'])
+gap_low = pd.DataFrame({col: [None] for col in pivot_df.columns}, index=[labels[0]])
+gap_mid = pd.DataFrame({col: [None] for col in pivot_df.columns}, index=[labels[1]])
+gap_high = pd.DataFrame({col: [None] for col in pivot_df.columns}, index=[labels[2]])
 
 pivot_df_spaced = pd.concat([low, gap_low, mid, gap_mid, high, gap_high])
 plot_df = pivot_df_spaced.fillna(0)
@@ -51,61 +67,51 @@ def label_or_blank(series):
 # 📈 График
 fig = go.Figure()
 
-for товар in ['Теназол Супер', 'РИЧ 350']:
-    fig.add_trace(go.Bar(
-        x=plot_df.index,
-        y=plot_df[товар],
-        name=товар,
-        text=label_or_blank(pivot_df_spaced[товар]),
-        textposition='outside',
-        textfont=dict(size=12, color='black')
-    ))
+# for товар in ['Теназол Супер', 'РИЧ 350']:
+#     if товар in plot_df.columns:
+#         fig.add_trace(go.Bar(
+#             x=plot_df.index,
+#             y=plot_df[товар],
+#             name=товар,
+#             text=label_or_blank(pivot_df_spaced[товар]),
+#             textposition='outside',
+#             textfont=dict(size=12, color='black')
+#         ))
 
 fig.add_trace(go.Bar(
     x=plot_df.index,
-    y=plot_df['Общая сумма продаж'],
-    name='Общая сумма продаж',
-    text=label_or_blank(pivot_df_spaced['Общая сумма продаж']),
+    y=plot_df[group_title],
+    name=group_title,
+    text=label_or_blank(pivot_df_spaced[group_title]),
     textposition='outside',
     textfont=dict(size=12, color='black')
 ))
 
 # 🎨 Оформление
 fig.update_layout(
-    title='💼 Продажи менеджеров с разбивкой: до 100K / до 1M / до 10',
-    title_font=dict(size=20, color='black'),
-
+    title=dict(text=chart_title, font=dict(size=20, color='black')),
     xaxis_title='Менеджер / Группа',
-    yaxis_title='Сумма продаж (лог шкала)',
-
+    yaxis_title=y_title,
     barmode='group',
     legend_title='Товары и итоги',
     bargap=0.3,
     bargroupgap=0.15,
     width=1800,
     height=800,
-
     yaxis_type='log',
-
     plot_bgcolor='white',
     paper_bgcolor='white',
-
     font=dict(size=14, color='black'),
-
     xaxis=dict(
         tickangle=-45,
         tickfont=dict(size=12, color='black'),
-        title=dict(font=dict(size=14, color='black'))  # ✅ Вложенный title.font
+        title=dict(font=dict(size=14, color='black'))
     ),
-
-
     yaxis=dict(
         tickfont=dict(size=12, color='black'),
         title=dict(font=dict(size=14, color='black')),
         gridcolor='lightgray'
     ),
-
-
     legend=dict(
         font=dict(size=13, color='black'),
         bgcolor='white',
