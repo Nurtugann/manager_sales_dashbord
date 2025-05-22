@@ -95,14 +95,16 @@ fig.update_layout(
     xaxis=dict(
         tickangle=-45,
         tickfont=dict(size=12, color='black'),
-        titlefont=dict(size=14, color='black')
+        title=dict(font=dict(size=14, color='black'))  # ✅ Вложенный title.font
     ),
+
 
     yaxis=dict(
         tickfont=dict(size=12, color='black'),
-        titlefont=dict(size=14, color='black'),
+        title=dict(font=dict(size=14, color='black')),
         gridcolor='lightgray'
     ),
+
 
     legend=dict(
         font=dict(size=13, color='black'),
